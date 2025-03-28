@@ -1,57 +1,56 @@
-# Life Logs Reminder
+Limitless Calendar Integration </br>
+This project integrates Limitless.ai Life Logs with Google Calendar and Tasks, automatically extracting appointments and tasks from your voice recordings and adding them to your calendar.
+</br>
+</br>
+🌟 Features
 
-An automatic integration that extracts events and tasks from Limitless Life Logs and adds them to Google Calendar and Google Tasks.
+</br>
+Automatically scans your Limitless Life Logs for mentions of appointments, meetings, and tasks
+</br>
+Uses OpenAI to intelligently extract event details and context
+</br>
+Creates Google Calendar events for appointments with smart date/time parsing
+</br>
+Adds reminders to Google Tasks for action items
+</br>
+Optional approval workflow before adding items to your calendar
+</br>
+Email notifications for newly added items
+</br>
+</br>
+</br>
 
-![Life Logs to Calendar & Tasks](https://via.placeholder.com/800x400?text=Life+Logs+Integration)
+📋 Prerequisites
+</br>
+</br>
 
-## Overview
+A Limitless.ai account with API access
+</br>
+An OpenAI API key
+</br>
+Google account with access to Google Apps Script
+</br>
+Google Calendar and Tasks access
+</br></br></br>
 
-This project automatically:
+🚀 Setup Instructions
+</br>
+Step 1: Create a Google Apps Script project
+</br>
 
-1. Checks your Limitless Life Logs for mentions of appointments, events, and tasks
-2. Uses AI to extract details like dates, times, and contextual information
-3. Adds appointments to your Google Calendar
-4. Adds reminders/tasks to Google Tasks
-5. Sends you email notifications when new items are found
-
-It runs automatically every few minutes to keep your calendar and task list up-to-date with things mentioned in your conversations.
-
-## Prerequisites
-
-To use this integration, you'll need:
-
-- A [Limitless](https://limitless.ai) account with API access
-- An [OpenAI API key](https://platform.openai.com/api-keys)
-- A Google account (for Google Apps Script, Calendar, and Tasks)
-
-## Setup Instructions
-
-### Step 1: Get Your API Keys
-
-1. **Limitless API Key**:
-   - Go to your Limitless account settings
-   - Find or generate your API key
-
-2. **OpenAI API Key**:
-   - Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
-   - Create a new API key (if you don't have one already)
-   - Copy the key (you'll need it for the script)
-
-### Step 2: Create a Google Apps Script Project
-
-1. Go to [Google Apps Script](https://script.google.com)
-2. Click "New Project"
-3. Name your project (e.g., "Life Logs Integration")
-4. Delete any default code in the editor
-
-### Step 3: Add the Script Code
-
-Copy and paste the entire script code below into the editor:
-
-```javascript
+Go to Google Apps Script and click "New Project"
+</br>
+Delete any code in the editor
+</br>
+Copy and paste the following code into the editor:
+</br>
+</br>
+Replace the placeholder API keys in the code with your actual keys:
+</br>
+```
 // Configuration - Replace with your actual API keys
-const LIMITLESS_API_KEY = "YOUR_LIMITLESS_API_KEY";
-const OPENAI_API_KEY = "YOUR_OPENAI_API_KEY"; // Get this from https://platform.openai.com/api-keys
+const LIMITLESS_API_KEY = "ENTER API KEY HERE";
+const OPENAI_API_KEY = "ENTER API KEY HERE"; // Get this from https://platform.openai.com/api-keys
 
 // How many hours back to check for new logs
 const HOURS_LOOKBACK = 24;
@@ -60,9 +59,20 @@ const HOURS_LOOKBACK = 24;
 const CALENDAR_NAME = "Life Logs Appointments"; // For appointments only
 const DEFAULT_REMINDER_MINUTES = 30; // Default reminder time in minutes
 
+// Approval workflow settings
+const ENABLE_APPROVAL_WORKFLOW = true; // Set to false to bypass approval process
+const SPREADSHEET_ID = ""; // Leave empty to create a new one, or set to an existing spreadsheet ID
+const PENDING_ITEMS_SHEET_NAME = "PendingLifeLogsItems";
+const PROCESSED_LOGS_SHEET_NAME = "ProcessedLogs";
+
 // Main function that runs the entire process
 function processLifeLogs() {
   console.log("Starting Life Logs processing...");
+  
+  // First, process any pending approved items
+  if (ENABLE_APPROVAL_WORKFLOW) {
+    processPendingApprovals();
+  }
   
   // Step 1: Get recent life logs
   const recentLogs = getRecentLifeLogs();
@@ -81,6 +91,12 @@ function processLifeLogs() {
       continue;
     }
     
+    // Skip logs we've already processed
+    if (hasLogBeenProcessed(log.id)) {
+      console.log(`Log ${log.id} has already been processed, skipping.`);
+      continue;
+    }
+    
     console.log(`Processing log: "${log.title}"`);
     const events = extractEventsWithOpenAI(logContent);
     
@@ -91,6 +107,9 @@ function processLifeLogs() {
     } else {
       console.log("No events or tasks found in this log.");
     }
+    
+    // Mark this log as processed regardless of whether events were found
+    markLogAsProcessed(log.id);
   }
   
   console.log("Life Logs processing completed.");
@@ -268,39 +287,435 @@ IMPORTANT: Based on this transcript, what events or reminders should be added to
   }
 }
 
-// Process events - add appointments to calendar and reminders to tasks
+// Process events with either approval workflow or direct addition
 function processEvents(events, log) {
-  let appointmentsAdded = 0;
-  let tasksAdded = 0;
+  if (!events || events.length === 0) return;
   
-  // Keep track of newly added events for notification
-  const addedEvents = [];
-  
-  for (const event of events) {
-    try {
-      if (event.isReminder) {
-        // Add to Google Tasks
-        if (addToGoogleTasks(event, log)) {
-          tasksAdded++;
-          addedEvents.push(event);
+  if (ENABLE_APPROVAL_WORKFLOW) {
+    // Store items for approval instead of directly adding them
+    storeItemsForApproval(events, log);
+    
+    // Send approval email
+    sendApprovalEmail(events, log);
+    
+    console.log(`${events.length} items stored for approval and notification sent.`);
+  } else {
+    // Original direct processing logic
+    let appointmentsAdded = 0;
+    let tasksAdded = 0;
+    
+    // Keep track of newly added events for notification
+    const addedEvents = [];
+    
+    for (const event of events) {
+      try {
+        if (event.isReminder) {
+          // Add to Google Tasks
+          if (addToGoogleTasks(event, log)) {
+            tasksAdded++;
+            addedEvents.push(event);
+          }
+        } else {
+          // Add to Google Calendar
+          if (addToGoogleCalendar(event, log)) {
+            appointmentsAdded++;
+            addedEvents.push(event);
+          }
         }
-      } else {
-        // Add to Google Calendar
-        if (addToGoogleCalendar(event, log)) {
-          appointmentsAdded++;
-          addedEvents.push(event);
-        }
+      } catch (error) {
+        console.error(`Error processing event "${event.title}":`, error);
       }
-    } catch (error) {
-      console.error(`Error processing event "${event.title}":`, error);
+    }
+    
+    console.log(`Added ${appointmentsAdded} appointments to calendar and ${tasksAdded} tasks to Google Tasks.`);
+    
+    // Send email notification if anything was added
+    if (addedEvents.length > 0) {
+      sendEmailNotification(addedEvents, log);
+    }
+  }
+}
+
+// Creates or gets the approval spreadsheet and saves its ID to properties
+function getApprovalSpreadsheet() {
+  // First check if we have an ID stored in script properties
+  const scriptProperties = PropertiesService.getScriptProperties();
+  let spreadsheetId = scriptProperties.getProperty('APPROVAL_SPREADSHEET_ID');
+  
+  // If a fixed ID is provided in the constants, use that
+  if (SPREADSHEET_ID) {
+    spreadsheetId = SPREADSHEET_ID;
+  }
+  
+  let spreadsheet;
+  
+  if (spreadsheetId) {
+    try {
+      // Try to open the existing spreadsheet
+      spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+      console.log(`Using existing approval spreadsheet: ${spreadsheet.getUrl()}`);
+    } catch (e) {
+      console.error(`Could not open existing spreadsheet with ID ${spreadsheetId}: ${e}`);
+      spreadsheetId = null;
     }
   }
   
-  console.log(`Added ${appointmentsAdded} appointments to calendar and ${tasksAdded} tasks to Google Tasks.`);
+  // If no spreadsheet found, create a new one
+  if (!spreadsheetId) {
+    try {
+      spreadsheet = SpreadsheetApp.create("Life Logs Approval Tracker");
+      spreadsheetId = spreadsheet.getId();
+      
+      // Store the ID for future use
+      scriptProperties.setProperty('APPROVAL_SPREADSHEET_ID', spreadsheetId);
+      console.log(`Created new approval spreadsheet: ${spreadsheet.getUrl()}`);
+      
+      // Share the spreadsheet with the current user
+      try {
+        const userEmail = Session.getActiveUser().getEmail();
+        if (userEmail) {
+          DriveApp.getFileById(spreadsheetId).addEditor(userEmail);
+          console.log(`Shared spreadsheet with ${userEmail}`);
+        }
+      } catch (e) {
+        console.error(`Could not share spreadsheet: ${e}`);
+      }
+    } catch (e) {
+      console.error(`Could not create new spreadsheet: ${e}`);
+      throw new Error("Failed to create or access approval spreadsheet");
+    }
+  }
   
-  // Send email notification if anything was added
-  if (addedEvents.length > 0) {
-    sendEmailNotification(addedEvents, log);
+  return spreadsheet;
+}
+
+// Get or create the sheet for pending items
+function getApprovalSheet() {
+  // Get the spreadsheet
+  const spreadsheet = getApprovalSpreadsheet();
+  
+  // Look for the sheet
+  let sheet = spreadsheet.getSheetByName(PENDING_ITEMS_SHEET_NAME);
+  
+  // If sheet doesn't exist, create it
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(PENDING_ITEMS_SHEET_NAME);
+    
+    // Add headers
+    sheet.appendRow([
+      "ID", "Status", "Timestamp", "Title", "Date", "Time", "Type", 
+      "Details", "LogID", "LogTitle", "LogTimestamp"
+    ]);
+    
+    // Format headers
+    sheet.getRange(1, 1, 1, 11).setBackground("#f3f3f3").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    
+    // Add data validation for the Status column
+    const statusRange = sheet.getRange("B2:B1000");
+    const rule = SpreadsheetApp.newDataValidation()
+      .requireValueInList(['pending', 'approved', 'rejected', 'processing', 'processed', 'error'], true)
+      .build();
+    statusRange.setDataValidation(rule);
+    
+    // Add conditional formatting for different statuses
+    const conditionalFormatRules = sheet.getConditionalFormatRules();
+    
+    // Pending - yellow
+    const pendingRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("pending")
+      .setBackground("#FFFDE7")
+      .setRanges([sheet.getRange("B2:B1000")])
+      .build();
+    conditionalFormatRules.push(pendingRule);
+    
+    // Approved - green
+    const approvedRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("approved")
+      .setBackground("#E8F5E9")
+      .setRanges([sheet.getRange("B2:B1000")])
+      .build();
+    conditionalFormatRules.push(approvedRule);
+    
+    // Rejected - red
+    const rejectedRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("rejected")
+      .setBackground("#FFEBEE")
+      .setRanges([sheet.getRange("B2:B1000")])
+      .build();
+    conditionalFormatRules.push(rejectedRule);
+    
+    // Processed - blue
+    const processedRule = SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo("processed")
+      .setBackground("#E3F2FD")
+      .setRanges([sheet.getRange("B2:B1000")])
+      .build();
+    conditionalFormatRules.push(processedRule);
+    
+    // Apply rules
+    sheet.setConditionalFormatRules(conditionalFormatRules);
+    
+    // Auto-resize columns
+    sheet.autoResizeColumns(1, 11);
+    
+    console.log(`Created and formatted ${PENDING_ITEMS_SHEET_NAME} sheet`);
+  }
+  
+  return sheet;
+}
+
+// Get or create sheet to track processed logs
+function getProcessedLogsSheet() {
+  const spreadsheet = getApprovalSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(PROCESSED_LOGS_SHEET_NAME);
+  
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(PROCESSED_LOGS_SHEET_NAME);
+    sheet.appendRow(["LogID", "ProcessedTimestamp"]);
+    sheet.setFrozenRows(1);
+    
+    // Format headers
+    sheet.getRange(1, 1, 1, 2).setBackground("#f3f3f3").setFontWeight("bold");
+    
+    console.log(`Created ${PROCESSED_LOGS_SHEET_NAME} sheet to track processed logs`);
+  }
+  
+  return sheet;
+}
+
+// Mark a log as processed
+function markLogAsProcessed(logId) {
+  const sheet = getProcessedLogsSheet();
+  sheet.appendRow([logId, new Date().toISOString()]);
+  console.log(`Marked log ${logId} as processed`);
+}
+
+// Check if a log has already been processed
+function hasLogBeenProcessed(logId) {
+  const sheet = getProcessedLogsSheet();
+  const data = sheet.getDataRange().getValues();
+  
+  // Skip header row
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === logId) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Store items in Google Sheet for approval
+function storeItemsForApproval(events, log) {
+  // Get the approval sheet
+  const sheet = getApprovalSheet();
+  
+  // Generate unique IDs for each item
+  const timestamp = new Date().getTime();
+  const logId = log.id || "unknown";
+  
+  // Add each event to the pending items sheet
+  events.forEach((event, index) => {
+    const itemId = `${timestamp}-${logId}-${index}`;
+    const row = [
+      itemId,                       // Unique ID
+      "pending",                    // Status (pending, approved, rejected)
+      new Date().toISOString(),     // Timestamp added
+      event.title,                  // Event title
+      event.date,                   // Date string
+      event.time || "",             // Time string
+      event.isReminder ? "task" : "event",  // Type
+      event.details || "",          // Details
+      log.id || "",                 // Source log ID
+      log.title || "",              // Source log title
+      new Date(log.startTime).toISOString() // Source log timestamp
+    ];
+    
+    sheet.appendRow(row);
+  });
+  
+  console.log(`${events.length} items stored in pending items sheet`);
+}
+
+// Send email with link to the Google Sheet for manual approval
+function sendApprovalEmail(events, log) {
+  // Get the user's email
+  const email = Session.getActiveUser().getEmail();
+  
+  // Create the email subject
+  const subject = `Life Logs: ${events.length} items need your approval`;
+  
+  // Get the spreadsheet URL for direct access
+  let spreadsheetUrl = "";
+  try {
+    const spreadsheet = getApprovalSpreadsheet();
+    spreadsheetUrl = spreadsheet.getUrl();
+  } catch (e) {
+    console.error("Could not get spreadsheet URL:", e);
+  }
+  
+  // Create the email body with HTML formatting
+  let body = `<h2>Events/Tasks Detected in Your Life Logs</h2>`;
+  body += `<p>The following ${events.length} items were extracted from your recent Life Log "${log.title}" and need your approval.</p>`;
+  
+  // Add a table of events
+  body += `<table border="1" cellpadding="5" style="border-collapse: collapse;">`;
+  body += `<tr style="background-color: #f2f2f2;"><th>Type</th><th>Title</th><th>Date/Time</th><th>Details</th></tr>`;
+  
+  // Add each event to the table
+  events.forEach((event) => {
+    const type = event.isReminder ? "Task" : "Calendar Event";
+    const bgColor = event.isReminder ? "#fff0f0" : "#f0f0ff"; // Light red for tasks, light blue for events
+    const dateTimeStr = `${event.date} ${event.time || ""}`.trim();
+    
+    body += `<tr style="background-color: ${bgColor};">`;
+    body += `<td><strong>${type}</strong></td>`;
+    body += `<td>${event.title}</td>`;
+    body += `<td>${dateTimeStr}</td>`;
+    body += `<td>${event.details || ""}</td>`;
+    body += `</tr>`;
+  });
+  
+  body += `</table>`;
+  
+  // Add information about the source log
+  body += `<p><strong>Source:</strong> "${log.title}" (${new Date(log.startTime).toLocaleString()})</p>`;
+  
+  // Add instructions for approval
+  body += `<div style="margin-top:20px; padding:15px; background-color:#f0f8ff; border:1px solid #4285f4; border-radius:5px;">`;
+  body += `<h3 style="margin-top:0;">How to approve or reject items:</h3>`;
+  body += `<p>1. <a href="${spreadsheetUrl}" target="_blank">Open the Google Sheet</a> containing pending items</p>`;
+  body += `<p>2. Find the items listed above in the sheet</p>`;
+  body += `<p>3. To approve an item, select the 'Status' cell and choose "approved" from the dropdown</p>`;
+  body += `<p>4. To reject an item, select the 'Status' cell and choose "rejected" from the dropdown</p>`;
+  body += `<p>5. The script will process approved items automatically</p>`;
+  body += `</div>`;
+  
+  // Send the email
+  try {
+    MailApp.sendEmail({
+      to: email,
+      subject: subject,
+      htmlBody: body
+    });
+    console.log(`Approval email sent to ${email}`);
+  } catch (error) {
+    console.error("Error sending approval email:", error);
+  }
+}
+
+// Function to check for and process any pending items that have been approved
+function processPendingApprovals() {
+  console.log("Checking for pending approvals...");
+  
+  // Get the pending items sheet
+  let sheet;
+  try {
+    sheet = getApprovalSheet();
+  } catch (e) {
+    console.log("No pending items sheet found:", e);
+    return;
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) { // Only header row
+    console.log("No pending items found");
+    return;
+  }
+  
+  const headers = data[0];
+  
+  // Find the column indices
+  const idIndex = headers.indexOf("ID");
+  const statusIndex = headers.indexOf("Status");
+  const titleIndex = headers.indexOf("Title");
+  const dateIndex = headers.indexOf("Date");
+  const timeIndex = headers.indexOf("Time");
+  const typeIndex = headers.indexOf("Type");
+  const detailsIndex = headers.indexOf("Details");
+  const logIdIndex = headers.indexOf("LogID");
+  const logTitleIndex = headers.indexOf("LogTitle");
+  const logTimestampIndex = headers.indexOf("LogTimestamp");
+  
+  // Make sure we found all the expected columns
+  if (idIndex === -1 || statusIndex === -1 || titleIndex === -1 || dateIndex === -1 || 
+      timeIndex === -1 || typeIndex === -1 || detailsIndex === -1) {
+    console.error("Some expected columns not found in the sheet");
+    return;
+  }
+  
+  // Find items with "approved" status that haven't been processed yet
+  let approvedItems = [];
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][statusIndex] === "approved") {
+      approvedItems.push({
+        rowIndex: i + 1, // +1 because sheets are 1-indexed
+        id: data[i][idIndex],
+        title: data[i][titleIndex],
+        date: data[i][dateIndex],
+        time: data[i][timeIndex],
+        type: data[i][typeIndex],
+        details: data[i][detailsIndex],
+        logId: data[i][logIdIndex],
+        logTitle: data[i][logTitleIndex],
+        logTimestamp: data[i][logTimestampIndex]
+      });
+    }
+  }
+  
+  console.log(`Found ${approvedItems.length} approved items to process`);
+  
+  if (approvedItems.length === 0) {
+    return;
+  }
+  
+  // Process each approved item
+  for (const item of approvedItems) {
+    try {
+      // Mark as "processing" to avoid duplicate processing
+      sheet.getRange(item.rowIndex, statusIndex + 1).setValue("processing");
+      
+      // Create event object
+      const event = {
+        title: item.title,
+        date: item.date,
+        time: item.time,
+        isReminder: item.type === "task",
+        details: item.details
+      };
+      
+      // Create log object for context
+      const log = {
+        id: item.logId,
+        title: item.logTitle,
+        startTime: item.logTimestamp
+      };
+      
+      // Process the item based on type
+      let result = false;
+      
+      if (event.isReminder) {
+        // Add to Google Tasks
+        result = addToGoogleTasks(event, log);
+      } else {
+        // Add to Google Calendar
+        result = addToGoogleCalendar(event, log);
+      }
+      
+      // Mark as "processed" or "error" based on result
+      if (result) {
+        sheet.getRange(item.rowIndex, statusIndex + 1).setValue("processed");
+        console.log(`Successfully processed item: "${item.title}"`);
+      } else {
+        sheet.getRange(item.rowIndex, statusIndex + 1).setValue("error");
+        console.log(`Failed to process item: "${item.title}"`);
+      }
+    } catch (error) {
+      console.error(`Error processing approved item ${item.id}:`, error);
+      sheet.getRange(item.rowIndex, statusIndex + 1).setValue("error");
+    }
   }
 }
 
@@ -377,15 +792,18 @@ function addToGoogleTasks(event, log) {
     const title = event.title;
     const notes = `${event.details || ''}\n\nExtracted from Life Log: "${log.title}"\nLog date: ${new Date(log.startTime).toLocaleString()}`;
     
-    // Check if this task already exists to avoid duplicates
-    if (taskAlreadyExists(taskList.id, title, dueDateRFC3339)) {
+    // Modified task duplication check to be less strict
+    if (isExactTaskDuplicate(taskList.id, title, dueDateRFC3339)) {
       console.log(`Task "${title}" already exists, skipping.`);
       return false;
     }
     
+    // Add a timestamp to make the task unique
+    const taskTitle = "⚠️ " + title + " [" + new Date().toLocaleTimeString() + "]";
+    
     // Create the task with high priority
     const task = {
-      title: "⚠️ " + title, // Add priority indicator in the title
+      title: taskTitle,
       notes: notes,
       due: dueDateRFC3339,
       status: 'needsAction'
@@ -398,6 +816,43 @@ function addToGoogleTasks(event, log) {
   } catch (error) {
     console.error(`Error adding task "${event.title}" to Google Tasks:`, error);
     return false;
+  }
+}
+
+// Check for exact task duplicates only
+function isExactTaskDuplicate(taskListId, title, dueDate) {
+  try {
+    // Only check today's tasks for duplicates to avoid blocking repeating tasks on different days
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const dueDateStr = dueDate.split('T')[0];
+    
+    // If the due date is not today, don't consider it a duplicate
+    if (dueDateStr !== todayStr) {
+      return false;
+    }
+    
+    // Get active tasks only
+    const activeTasks = Tasks.Tasks.list(taskListId, {
+      showCompleted: false
+    }).items || [];
+    
+    // Check for an exact title match only (case insensitive)
+    for (const task of activeTasks) {
+      // Remove the warning emoji and timestamp if present
+      const cleanTaskTitle = task.title.replace(/^⚠️\s*/, '').replace(/\s*\[\d{1,2}:\d{2}:\d{2}.*\]$/, '');
+      
+      // Only consider it a duplicate if the titles match exactly (ignoring case)
+      if (cleanTaskTitle.toLowerCase() === title.toLowerCase()) {
+        console.log(`Exact task match "${title}" already exists: "${task.title}"`);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Error checking existing tasks:", error);
+    return false; // If we can't check, assume it doesn't exist
   }
 }
 
@@ -589,9 +1044,9 @@ function parseDateTime(dateStr, timeStr) {
           hours = parseInt(simpleTime[1]);
           
           // Handle AM/PM
-          if (simpleTime[2].toLowerCase() === 'pm' && hours < 12) {
+          if (simpleTime[2] && simpleTime[2].toLowerCase() === 'pm' && hours < 12) {
             hours += 12;
-          } else if (simpleTime[2].toLowerCase() === 'am' && hours === 12) {
+          } else if (simpleTime[2] && simpleTime[2].toLowerCase() === 'am' && hours === 12) {
             hours = 0;
           }
         }
@@ -750,9 +1205,9 @@ function parseDueDate(dateStr, timeStr) {
         if (simpleTime) {
           hours = parseInt(simpleTime[1]);
           
-          if (simpleTime[2].toLowerCase() === 'pm' && hours < 12) {
+          if (simpleTime[2] && simpleTime[2].toLowerCase() === 'pm' && hours < 12) {
             hours += 12;
-          } else if (simpleTime[2].toLowerCase() === 'am' && hours === 12) {
+          } else if (simpleTime[2] && simpleTime[2].toLowerCase() === 'am' && hours === 12) {
             hours = 0;
           }
         }
@@ -775,7 +1230,7 @@ function parseDueDate(dateStr, timeStr) {
   }
 }
 
-// Send an email notification for new events and tasks
+// Send an email notification for new events and tasks (when not using approval workflow)
 function sendEmailNotification(events, log) {
   if (!events || events.length === 0) return;
   
@@ -783,11 +1238,11 @@ function sendEmailNotification(events, log) {
   const email = Session.getActiveUser().getEmail();
   
   // Create the email subject
-  const subject = `New Life Logs Events/Tasks Found: ${events.length} items`;
+  const subject = `New Life Logs Events/Tasks Added: ${events.length} items`;
   
   // Create the email body with HTML formatting
   let body = `<h2>New Events/Tasks from Life Logs</h2>`;
-  body += `<p>The following ${events.length} items were extracted from your recent Life Logs:</p>`;
+  body += `<p>The following ${events.length} items were automatically added from your recent Life Logs:</p>`;
   
   // Add a table of events
   body += `<table border="1" cellpadding="5" style="border-collapse: collapse;">`;
@@ -869,14 +1324,25 @@ function testWithSampleLog() {
     
     if (events && events.length > 0) {
       console.log(`Found ${events.length} events in sample log:`, events);
-      console.log("Testing adding events to calendar and tasks...");
+      console.log("Testing adding events to sheet for approval...");
       processEvents(events, sampleLog);
       console.log("Test completed successfully!");
+      
+      // Get and print the spreadsheet URL for easy access
+      try {
+        const url = getApprovalSpreadsheet().getUrl();
+        console.log("=============================================");
+        console.log(`Approval spreadsheet URL: ${url}`);
+        console.log("Open this URL to see and approve/reject items");
+        console.log("=============================================");
+      } catch (e) {
+        console.error("Could not get spreadsheet URL:", e);
+      }
     } else {
       console.log("No events found in sample log or API error occurred.");
     }
   } catch (e) {
-    console.error("Error enabling Tasks service:", e);
+    console.error("Error testing:", e);
     console.log("Please enable the Google Tasks API manually in Resources > Advanced Google services...");
   }
 }
@@ -937,111 +1403,279 @@ function testOpenAIConnection() {
     return false;
   }
 }
+
+// Function to create triggers for automatic execution
+function setupTriggers() {
+  // Clear any existing triggers
+  const triggers = ScriptApp.getProjectTriggers();
+  for (const trigger of triggers) {
+    ScriptApp.deleteTrigger(trigger);
+  }
+  
+  // Create trigger to run processLifeLogs every 5 minutes
+  ScriptApp.newTrigger('processLifeLogs')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  
+  // Create trigger to run processPendingApprovals every hour
+  ScriptApp.newTrigger('processPendingApprovals')
+    .timeBased()
+    .everyHours(1)
+    .create();
+  
+  console.log("Triggers set up successfully!");
+}
+
+// Function to clear all pending items (for testing)
+function clearPendingItems() {
+  try {
+    const sheet = getApprovalSheet();
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow > 1) {
+      // Clear all data except headers
+      sheet.deleteRows(2, lastRow - 1);
+    }
+    
+    console.log("All pending items cleared!");
+  } catch (e) {
+    console.error("Error clearing pending items:", e);
+  }
+}
+
+// Function to view approval spreadsheet
+function getApprovalSpreadsheetUrl() {
+  try {
+    const spreadsheet = getApprovalSpreadsheet();
+    const url = spreadsheet.getUrl();
+    console.log("Approval spreadsheet URL:", url);
+    return url;
+  } catch (e) {
+    console.error("Error getting approval spreadsheet:", e);
+    return null;
+  }
+}
+
+// Function to reset approval process (for testing)
+function resetApprovalSystem() {
+  // Clear the stored spreadsheet ID
+  PropertiesService.getScriptProperties().deleteProperty('APPROVAL_SPREADSHEET_ID');
+  console.log("Approval system reset - will create a new spreadsheet on next run");
+}
+
+// Function to reset processed logs tracking (to force reprocessing)
+function resetProcessedLogsTracking() {
+  try {
+    // Get the processed logs sheet
+    const sheet = getProcessedLogsSheet();
+    const lastRow = sheet.getLastRow();
+    
+    if (lastRow > 1) {
+      // Clear all data except headers
+      sheet.deleteRows(2, lastRow - 1);
+    }
+    
+    console.log("Processed logs tracking reset - logs will be reprocessed on next run");
+  } catch (e) {
+    console.error("Error resetting processed logs tracking:", e);
+  }
+}
+
+// Function to manually approve an item by ID
+function manuallyApproveItem(itemId) {
+  try {
+    const sheet = getApprovalSheet();
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    const idIndex = headers.indexOf("ID");
+    const statusIndex = headers.indexOf("Status");
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][idIndex] === itemId) {
+        // Update status to "approved"
+        sheet.getRange(i + 1, statusIndex + 1).setValue("approved");
+        console.log(`Item ${itemId} marked as approved`);
+        return true;
+      }
+    }
+    
+    console.log(`Item ${itemId} not found`);
+    return false;
+  } catch (e) {
+    console.error("Error manually approving item:", e);
+    return false;
+  }
+}
 ```
+</br>
+</br>Step 2: Enable Google Apps Script advanced services
+</br>
 
-### Step 4: Add Your API Keys
 
-Replace the placeholders at the top of the script with your actual API keys:
+In your Google Apps Script project, click on Services (+ icon) in the left sidebar
+</br>
+Add the following services:
+</br>
 
-```javascript
-const LIMITLESS_API_KEY = "your-limitless-api-key-here";
-const OPENAI_API_KEY = "your-openai-api-key-here";
-```
+Calendar API
+</br>
+Drive API
+</br>
+Gmail API
+</br>
+Tasks API
+</br>
+Sheets API
+</br>
 
-### Step 5: Enable Required Google Services
 
-1. In the left sidebar of the Apps Script editor, click on "+" next to "Services"
-2. Find and add these services:
-   - **Gmail** (for sending email notifications)
-   - **Calendar** (for adding calendar events)
-   - **Tasks** (for adding tasks)
-3. Click "Add" for each service
+</br></br></br></br>
+Step 3: Save your project and test the setup
+</br>
+Name your project (e.g., "Limitless Calendar Integration")
 
-### Step 6: Test the Integration
+</br></br>
+Click the Save button (disk icon) to save your changes
+</br>
+Run the testWithSampleLog function to test the setup:
+</br>
 
-1. Click the dropdown menu next to "Debug" and select `testWithSampleLog`
-2. Click the "Run" button
-3. When prompted, click "Review permissions" and allow the script to access your Google account
-4. Check the logs to see if the test is successful
-5. Verify that:
-   - A new "Life Logs Appointments" calendar was created (if it didn't exist before)
-   - Sample events were added to your calendar
-   - Sample tasks were added to your Google Tasks
-   - You received an email notification
+Click the dropdown menu next to the Run button
+</br>
+Select testWithSampleLog
+</br>
+Click the Run button (▶️)
+</br>
 
-### Step 7: Set Up Automatic Execution
 
-1. Click on the clock icon in the left sidebar (Triggers)
-2. Click "Add Trigger" at the bottom right
-3. Configure the trigger:
-   - Choose function: `processLifeLogs`
-   - Choose deployment: "Head"
-   - Event source: "Time-driven"
-   - Type of time: "Minutes timer"
-   - Minutes interval: "Every 5 minutes" (or your preferred frequency)
-4. Click "Save"
+</br></br></br>
+Step 4: Set up automatic triggers
+</br>
+After successful testing, run the setupTriggers function
+</br>
+This will create two automatic triggers:
+</br>
 
-## How It Works
 
-### Calendar Events vs. Tasks
+Run processLifeLogs every 5 minutes
+</br>
+Run processPendingApprovals every hour
+</br>
 
-The script categorizes items it finds into two types:
+</br></br>
 
-1. **Calendar Events** (when `isReminder` is `false`):
-   - Added to Google Calendar
-   - Default to 7:00 AM if no time is specified
-   - Include a 30-minute reminder notification
+Step 5: Grant necessary permissions
+</br>
+The first time you run a function, you'll be prompted to grant permissions
+</br>
+Click "Review Permissions" and then allow access to your Google account
+</br>
+Accept the permissions to allow the script to:
+</br>
 
-2. **Tasks/Reminders** (when `isReminder` is `true`):
-   - Added to Google Tasks
-   - Marked with high priority (⚠️)
-   - Set to current time for "today" tasks
+Access your calendar
+</br>
+Create and modify Google Tasks
+</br>
+Send emails on your behalf
+</br>
+Create and access Google Sheets
+</br>
 
-### Special Cases
+</br></br>
 
-- **Appointments with no date**: Converted to high-priority tasks titled "Follow up about: [appointment name]"
-- **Today's tasks**: Use the current time to ensure they appear immediately
-- **Completed tasks**: Not re-added if you've already marked them as complete
+📝 Configuration Options
+</br>
+You can customize the behavior by modifying these constants at the top of the script:
+</br>
 
-## Customization
+HOURS_LOOKBACK: How many hours back to look for new logs (default: 24)
+</br>
+CALENDAR_NAME: Name of the calendar to use for appointments (default: "Life Logs Appointments")
+</br>
+DEFAULT_REMINDER_MINUTES: Minutes before event to show reminders (default: 30)
+</br>
+ENABLE_APPROVAL_WORKFLOW: Whether to require manual approval (default: true)
+</br>
+</br></br>
+🛠️ Troubleshooting
+</br>
+API Key Issues
+</br>
 
-You can customize the script by modifying these settings near the top:
+Ensure your Limitless API key is correctly entered and has the necessary permissions
+</br>
+Verify your OpenAI API key is valid and has enough credits
+</br>
 
-```javascript
-// How many hours back to check for new logs
-const HOURS_LOOKBACK = 24;
+Calendar/Task Issues</br></br>
+</br>
 
-// Calendar settings
-const CALENDAR_NAME = "Life Logs Appointments"; 
-const DEFAULT_REMINDER_MINUTES = 30;
-```
+Make sure you've granted all necessary permissions to the script
+</br>
+Check your Google Calendar settings to ensure you can receive invitations
+</br>
 
-## Troubleshooting
+Permission Errors</br></br>
 
-### Common Issues
+Run the script manually once to accept all permissions </br>
 
-1. **API Key Issues**:
-   - Run `testOpenAIConnection()` to check your OpenAI API key
-   - Check the Limitless API documentation for key format
+If you get a "This app isn't verified" warning, click "Advanced" and proceed
+</br>
+</br>
+📐 Advanced Functions
+</br>
+For more control, you can use these utility functions:
+</br>
 
-2. **Missing Calendar or Tasks**:
-   - Ensure you've granted the necessary permissions
-   - Check if you have multiple Google accounts and are using the right one
+testWithSampleLog(): Tests the system with a pre-defined sample log
+</br>
+getApprovalSpreadsheetUrl(): Gets the URL of the approval spreadsheet
+</br>
+clearPendingItems(): Clears all pending items in the approval system
+</br>
+resetApprovalSystem(): Resets the approval system (creates a new spreadsheet)
+</br>
+resetProcessedLogsTracking(): Forces reprocessing of already processed logs
+</br>
+</br></br>
 
-3. **No Events Being Found**:
-   - Check the logs to see how the OpenAI API is responding
-   - Try modifying the prompt in the `extractEventsWithOpenAI` function
+💡 How It Works
+</br></br>
 
-4. **Script Timing Out**:
-   - Google Apps Script has a 6-minute execution limit
-   - Reduce the number of logs processed in one go (reduce `HOURS_LOOKBACK`)
+The script periodically checks your Limitless Life Logs
+</br>
+When it finds a new log, it uses OpenAI to analyze the transcript and extract:
+</br>
 
-## License
+Appointments (doctor, meetings, etc.)
+</br>
+Tasks and reminders (buy milk, call someone)
+</br>
 
-This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Credits
+If approval workflow is enabled:
+</br>
 
-- Created by [Your Name]
-- Uses OpenAI's GPT-3.5 Turbo model for event extraction
-- Integrates with Limitless Life Logs, Google Calendar, and Google Tasks
+Items are stored in a Google Sheet
+</br>
+You receive an email to approve/reject each item
+</br>
+After approval, items are added to your calendar or tasks
+</br>
+
+
+If approval workflow is disabled:
+</br>
+
+Items are directly added to your calendar or tasks
+</br>
+You receive a notification email with the added items</br>
+
+
+
+</br>
+
+Now your Limitless Life Logs will automatically populate your calendar and task list with appointments and to-dos that you mention in conversation!
