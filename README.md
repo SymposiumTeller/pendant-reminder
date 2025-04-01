@@ -1,3 +1,6 @@
+PLEASE PAUSE ON USING THIS - CLEANING UP CODE!
+
+
 # Life Logs Calendar Integration
 
 A Google Apps Script that automatically extracts calendar events and tasks from Limitless Life Logs and adds them to your Google Calendar and Google Tasks.
